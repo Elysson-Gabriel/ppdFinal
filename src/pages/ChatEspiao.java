@@ -4,14 +4,13 @@
  */
 package pages;
 
-import main.*;
 import java.rmi.RemoteException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import javax.swing.DefaultListModel;
 import javax.swing.JOptionPane;
 import tuplas.Espiao;
 import tuplas.Message;
-import tuplas.Usuario;
 import net.jini.core.entry.UnusableEntryException;
 import net.jini.core.lease.Lease;
 import net.jini.core.transaction.TransactionException;
@@ -27,6 +26,7 @@ public class ChatEspiao extends javax.swing.JFrame {
     private JavaSpace space;
     private Espiao espiao;
     private int msgAtualPub;
+    private DefaultListModel palavras = null;
     
     /**
      * Creates new form SalasListagem
@@ -52,7 +52,7 @@ public class ChatEspiao extends javax.swing.JFrame {
         } catch (UnusableEntryException | TransactionException | InterruptedException | RemoteException ex) {
             Logger.getLogger(ChatEspiao.class.getName()).log(Level.SEVERE, null, ex);
         }
-        
+        esp = null;//RMV
         if (esp == null) {
             esp = new Espiao();
             esp.qtdMsg = 0;
@@ -71,6 +71,7 @@ public class ChatEspiao extends javax.swing.JFrame {
         }
         
         this.msgAtualPub = this.espiao.qtdMsg + 1;
+        palavras = new DefaultListModel();
         
         AtualizaChat chat = new AtualizaChat();
         chat.start();
@@ -84,6 +85,9 @@ public class ChatEspiao extends javax.swing.JFrame {
         @Override
         public void run(){
             while(true){
+                boolean suspeito;
+                String conteudo;
+                String exibicao;
                 Message template = new Message();
                 template.ordem = msgAtualPub;
                 template.validada = false;
@@ -92,10 +96,33 @@ public class ChatEspiao extends javax.swing.JFrame {
                     msg = (Message) space.take(template, null, Lease.FOREVER);
                     
                     if(msg != null){
+                        suspeito = false;
+                        conteudo = msg.content;
+                        
+                        for(int i = 0; i< jListPalavras.getModel().getSize(); i++){
+                            if(conteudo.toLowerCase().contains(jListPalavras.getModel().getElementAt(i))){
+                                suspeito = true;
+                            }
+                        }
                         msg.validada = true;
-                        msgAtualPub += 1;
-                        chatArea.setText(chatArea.getText() + "\n" + msg.usuario + ": " + msg.content);
+                        
+                        if(suspeito){
+                            exibicao = conteudo + " [***Bloqueada***]";
+                            msg.content = "--- Mensgaem bloqueada ---";
+                        }else{
+                            exibicao = conteudo;
+                        }
+                        
+                        chatArea.setText(chatArea.getText() + "\n" + msg.usuario + ": " + exibicao);
                         chatArea.setCaretPosition(chatArea.getDocument().getLength());
+                        
+                        try {
+                            space.write(msg, null, Lease.FOREVER);
+                        } catch (TransactionException | RemoteException ex) {
+                            Logger.getLogger(ChatEspiao.class.getName()).log(Level.SEVERE, null, ex);
+                        }
+                        
+                        msgAtualPub += 1;
                         Thread.sleep(10);
                     }
                     
@@ -112,6 +139,41 @@ public class ChatEspiao extends javax.swing.JFrame {
         }
 
     }
+    
+    public void addPalavra(){
+        String palavra = this.txtPalavra.getText();
+        boolean duplicada = false;
+        
+        if(palavra != null && !palavra.isEmpty()){ 
+            
+            for(int i = 0; i< jListPalavras.getModel().getSize(); i++){
+                if(palavra.equalsIgnoreCase(jListPalavras.getModel().getElementAt(i))){
+                    duplicada = true;
+                }
+            }
+            
+            if(!duplicada){
+                palavras.addElement(palavra);
+                this.jListPalavras.setModel(palavras);
+            }
+
+        }
+        
+        this.txtPalavra.setText("");
+    }
+    
+    public void rmvPalavra(){
+        String palavra = this.jListPalavras.getSelectedValue();
+
+        if(palavra != null && !palavra.isEmpty()){ 
+
+            palavras.removeElement(palavra);
+
+            this.jListPalavras.setModel(palavras);
+        }
+        
+        this.jButtonRmv.setEnabled(false);
+    }
 
     /**
      * This method is called from within the constructor to initialize the form.
@@ -127,10 +189,10 @@ public class ChatEspiao extends javax.swing.JFrame {
         jScrollPane3 = new javax.swing.JScrollPane();
         chatArea = new javax.swing.JTextArea();
         jScrollPane2 = new javax.swing.JScrollPane();
-        jListSalas = new javax.swing.JList<>();
+        jListPalavras = new javax.swing.JList<>();
         jLabelNome1 = new javax.swing.JLabel();
         jButtonAdd = new javax.swing.JButton();
-        mensagem = new javax.swing.JTextField();
+        txtPalavra = new javax.swing.JTextField();
         jButtonRmv = new javax.swing.JButton();
 
         setDefaultCloseOperation(javax.swing.WindowConstants.EXIT_ON_CLOSE);
@@ -149,30 +211,42 @@ public class ChatEspiao extends javax.swing.JFrame {
         chatArea.setFocusable(false);
         jScrollPane3.setViewportView(chatArea);
 
-        jListSalas.setSelectionMode(javax.swing.ListSelectionModel.SINGLE_SELECTION);
-        jListSalas.addListSelectionListener(new javax.swing.event.ListSelectionListener() {
+        jListPalavras.setSelectionMode(javax.swing.ListSelectionModel.SINGLE_SELECTION);
+        jListPalavras.addListSelectionListener(new javax.swing.event.ListSelectionListener() {
             public void valueChanged(javax.swing.event.ListSelectionEvent evt) {
-                jListSalasValueChanged(evt);
+                jListPalavrasValueChanged(evt);
             }
         });
-        jScrollPane2.setViewportView(jListSalas);
+        jScrollPane2.setViewportView(jListPalavras);
 
         jLabelNome1.setText("Palavras \"suspeitas\":");
 
         jButtonAdd.setText("+");
+        jButtonAdd.setEnabled(false);
+        jButtonAdd.setPreferredSize(new java.awt.Dimension(41, 24));
         jButtonAdd.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
                 jButtonAddActionPerformed(evt);
             }
         });
 
-        mensagem.addKeyListener(new java.awt.event.KeyAdapter() {
+        txtPalavra.addFocusListener(new java.awt.event.FocusAdapter() {
+            public void focusGained(java.awt.event.FocusEvent evt) {
+                txtPalavraFocusGained(evt);
+            }
+            public void focusLost(java.awt.event.FocusEvent evt) {
+                txtPalavraFocusLost(evt);
+            }
+        });
+        txtPalavra.addKeyListener(new java.awt.event.KeyAdapter() {
             public void keyPressed(java.awt.event.KeyEvent evt) {
-                mensagemKeyPressed(evt);
+                txtPalavraKeyPressed(evt);
             }
         });
 
         jButtonRmv.setText("-");
+        jButtonRmv.setEnabled(false);
+        jButtonRmv.setPreferredSize(new java.awt.Dimension(41, 24));
         jButtonRmv.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
                 jButtonRmvActionPerformed(evt);
@@ -186,23 +260,20 @@ public class ChatEspiao extends javax.swing.JFrame {
             .addComponent(jLabelTitulo, javax.swing.GroupLayout.Alignment.TRAILING, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
             .addGroup(jPanelPrincipalLayout.createSequentialGroup()
                 .addContainerGap()
-                .addComponent(jScrollPane3, javax.swing.GroupLayout.PREFERRED_SIZE, 235, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addComponent(jScrollPane3, javax.swing.GroupLayout.PREFERRED_SIZE, 224, javax.swing.GroupLayout.PREFERRED_SIZE)
                 .addGap(18, 18, 18)
                 .addGroup(jPanelPrincipalLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-                    .addGroup(jPanelPrincipalLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-                        .addGroup(jPanelPrincipalLayout.createSequentialGroup()
-                            .addComponent(jLabelNome1, javax.swing.GroupLayout.PREFERRED_SIZE, 115, javax.swing.GroupLayout.PREFERRED_SIZE)
-                            .addGap(92, 92, 92))
-                        .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, jPanelPrincipalLayout.createSequentialGroup()
-                            .addComponent(mensagem, javax.swing.GroupLayout.PREFERRED_SIZE, 107, javax.swing.GroupLayout.PREFERRED_SIZE)
-                            .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                            .addComponent(jButtonAdd, javax.swing.GroupLayout.PREFERRED_SIZE, 41, javax.swing.GroupLayout.PREFERRED_SIZE)
-                            .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                            .addComponent(jButtonRmv)
-                            .addContainerGap()))
-                    .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, jPanelPrincipalLayout.createSequentialGroup()
-                        .addComponent(jScrollPane2, javax.swing.GroupLayout.PREFERRED_SIZE, 197, javax.swing.GroupLayout.PREFERRED_SIZE)
-                        .addContainerGap())))
+                    .addGroup(jPanelPrincipalLayout.createSequentialGroup()
+                        .addComponent(txtPalavra)
+                        .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                        .addComponent(jButtonAdd, javax.swing.GroupLayout.PREFERRED_SIZE, 41, javax.swing.GroupLayout.PREFERRED_SIZE)
+                        .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                        .addComponent(jButtonRmv, javax.swing.GroupLayout.PREFERRED_SIZE, 43, javax.swing.GroupLayout.PREFERRED_SIZE))
+                    .addGroup(jPanelPrincipalLayout.createSequentialGroup()
+                        .addComponent(jLabelNome1, javax.swing.GroupLayout.PREFERRED_SIZE, 184, javax.swing.GroupLayout.PREFERRED_SIZE)
+                        .addGap(0, 35, Short.MAX_VALUE))
+                    .addComponent(jScrollPane2, javax.swing.GroupLayout.PREFERRED_SIZE, 0, Short.MAX_VALUE))
+                .addContainerGap())
         );
         jPanelPrincipalLayout.setVerticalGroup(
             jPanelPrincipalLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
@@ -218,9 +289,9 @@ public class ChatEspiao extends javax.swing.JFrame {
                         .addComponent(jScrollPane2, javax.swing.GroupLayout.PREFERRED_SIZE, 169, javax.swing.GroupLayout.PREFERRED_SIZE)
                         .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
                         .addGroup(jPanelPrincipalLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
-                            .addComponent(mensagem, javax.swing.GroupLayout.PREFERRED_SIZE, 23, javax.swing.GroupLayout.PREFERRED_SIZE)
-                            .addComponent(jButtonAdd)
-                            .addComponent(jButtonRmv))))
+                            .addComponent(txtPalavra, javax.swing.GroupLayout.PREFERRED_SIZE, 23, javax.swing.GroupLayout.PREFERRED_SIZE)
+                            .addComponent(jButtonAdd, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                            .addComponent(jButtonRmv, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))))
                 .addContainerGap(40, Short.MAX_VALUE))
         );
 
@@ -238,69 +309,42 @@ public class ChatEspiao extends javax.swing.JFrame {
         pack();
     }// </editor-fold>//GEN-END:initComponents
 
-    private void jListSalasValueChanged(javax.swing.event.ListSelectionEvent evt) {//GEN-FIRST:event_jListSalasValueChanged
-        /*String select = this.jListSalas.getSelectedValue();
-        listaUsuarios.removeAllElements();
+    private void jListPalavrasValueChanged(javax.swing.event.ListSelectionEvent evt) {//GEN-FIRST:event_jListPalavrasValueChanged
+        String select = this.jListPalavras.getSelectedValue();
 
         if(select != null && !select.isEmpty()){
-            Sala s = null;
-            Usuario uTemplate = new Usuario();
-            uTemplate.sala = select;
-
-            Usuario u = null;
-
-            this.sala = new Sala();
-            this.sala.nome = select;
-
-            try {
-                s = (Sala) space.read(this.sala, null, Lease.FOREVER);
-            } catch (UnusableEntryException | TransactionException | InterruptedException | RemoteException ex) {
-                Logger.getLogger(SalaCadastro.class.getName()).log(Level.SEVERE, null, ex);
-            }
-
-            ArrayList<String> usuarios = new ArrayList<String>();
-            ArrayList<Integer> qtdMsgUsu = new ArrayList<Integer>();
-
-            for (int i = 0; i < s.qtdUsu; i++) {
-                try {
-                    u = (Usuario) space.take(uTemplate, null, Lease.FOREVER);
-                    usuarios.add(u.nome);
-                    qtdMsgUsu.add(u.qtdMsg);
-                    listaUsuarios.addElement(u.nome);
-                } catch (UnusableEntryException | TransactionException | InterruptedException | RemoteException ex) {
-                    Logger.getLogger(SalasListagem.class.getName()).log(Level.SEVERE, null, ex);
-                }
-            }
-
-            for (int i = 0; i < usuarios.size(); i++) {
-                uTemplate.nome = usuarios.get(i);
-                uTemplate.qtdMsg = qtdMsgUsu.get(i);
-                try {
-                    this.space.write(uTemplate, null, Lease.FOREVER);
-                } catch (TransactionException | RemoteException ex) {
-                    Logger.getLogger(SalasListagem.class.getName()).log(Level.SEVERE, null, ex);
-                }
-            }
-
-            this.jListUsuarios.setModel(listaUsuarios);
-        }*/
-    }//GEN-LAST:event_jListSalasValueChanged
+            this.jButtonAdd.setEnabled(false);
+            this.jButtonRmv.setEnabled(true);
+        }
+    }//GEN-LAST:event_jListPalavrasValueChanged
 
     private void jButtonAddActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButtonAddActionPerformed
         // TODO add your handling code here:
-
+        addPalavra();
     }//GEN-LAST:event_jButtonAddActionPerformed
 
-    private void mensagemKeyPressed(java.awt.event.KeyEvent evt) {//GEN-FIRST:event_mensagemKeyPressed
+    private void txtPalavraKeyPressed(java.awt.event.KeyEvent evt) {//GEN-FIRST:event_txtPalavraKeyPressed
         // TODO add your handling code here:
         if(evt.getKeyCode() == evt.VK_ENTER){
-            //enviarMensagemChat();
+            addPalavra();
         }
-    }//GEN-LAST:event_mensagemKeyPressed
+    }//GEN-LAST:event_txtPalavraKeyPressed
 
     private void jButtonRmvActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButtonRmvActionPerformed
-        // TODO add your handling code here:
+        rmvPalavra();
     }//GEN-LAST:event_jButtonRmvActionPerformed
+
+    private void txtPalavraFocusGained(java.awt.event.FocusEvent evt) {//GEN-FIRST:event_txtPalavraFocusGained
+        // TODO add your handling code here:
+        this.jListPalavras.clearSelection();
+        this.jButtonAdd.setEnabled(true);
+        this.jButtonRmv.setEnabled(false);
+    }//GEN-LAST:event_txtPalavraFocusGained
+
+    private void txtPalavraFocusLost(java.awt.event.FocusEvent evt) {//GEN-FIRST:event_txtPalavraFocusLost
+        // TODO add your handling code here:
+        
+    }//GEN-LAST:event_txtPalavraFocusLost
 
     /**
      * @param args the command line arguments
@@ -362,10 +406,10 @@ public class ChatEspiao extends javax.swing.JFrame {
     private javax.swing.JButton jButtonRmv;
     private javax.swing.JLabel jLabelNome1;
     private javax.swing.JLabel jLabelTitulo;
-    private javax.swing.JList<String> jListSalas;
+    private javax.swing.JList<String> jListPalavras;
     private javax.swing.JPanel jPanelPrincipal;
     private javax.swing.JScrollPane jScrollPane2;
     private javax.swing.JScrollPane jScrollPane3;
-    private javax.swing.JTextField mensagem;
+    private javax.swing.JTextField txtPalavra;
     // End of variables declaration//GEN-END:variables
 }
