@@ -4,6 +4,10 @@
  */
 package pages;
 
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.net.Socket;
 import java.rmi.RemoteException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -27,9 +31,11 @@ public class ChatEspiao extends javax.swing.JFrame {
     private Espiao espiao;
     private int msgAtualPub;
     private DefaultListModel palavras = null;
+    private ConexaoEspiao clienteEspiao;
     
     /**
-     * Creates new form SalasListagem
+     * Creates new form ChatEspiao
+     * @throws java.lang.ClassNotFoundException
      */
     public ChatEspiao() throws ClassNotFoundException {
         initComponents();
@@ -75,6 +81,52 @@ public class ChatEspiao extends javax.swing.JFrame {
         
         AtualizaChat chat = new AtualizaChat();
         chat.start();
+        
+        this.conectaServidor();
+    }
+    
+    public void conectaServidor(){
+        clienteEspiao = new ConexaoEspiao();
+    }
+    
+    private class ConexaoEspiao {
+    
+        private Socket socket;
+        private DataInputStream entrada;
+        private DataOutputStream saida;
+        
+        public ConexaoEspiao(){
+            System.out.println("----- Espião -----");
+
+            try{
+                //Se conecta via socket ao jogo do servidor
+                socket = new Socket("localhost", 51734);
+                entrada = new DataInputStream(socket.getInputStream());
+                saida = new DataOutputStream(socket.getOutputStream());
+                System.out.println("Espião conectado ao servidor.");
+            } catch (IOException ex) {
+                System.out.println("Erro no construtor do ConexaoEspiao");
+            }
+        }
+        
+        public void enviaSuspeita(String msg){
+            try{
+                saida.writeUTF(msg);
+                saida.flush();
+            } catch (IOException ex) {
+                System.out.println("Erro no enviaSuspeita() do Espião");
+            }
+        }
+        
+        public void fechaConexao(){
+           try{
+                socket.close();
+                System.out.println("-----CONEXÃO ENCERRADA-----");
+            } catch (IOException ex) {
+                System.out.println("Erro no fechaConexao() do Cliente");
+            } 
+        }
+        
     }
     
     private class AtualizaChat extends Thread{
@@ -109,6 +161,7 @@ public class ChatEspiao extends javax.swing.JFrame {
                         if(suspeito){
                             exibicao = conteudo + " [***Bloqueada***]";
                             msg.content = "--- Mensgaem bloqueada ---";
+                            clienteEspiao.enviaSuspeita(msg.usuario + ": " + conteudo);
                         }else{
                             exibicao = conteudo;
                         }
@@ -257,23 +310,23 @@ public class ChatEspiao extends javax.swing.JFrame {
         jPanelPrincipal.setLayout(jPanelPrincipalLayout);
         jPanelPrincipalLayout.setHorizontalGroup(
             jPanelPrincipalLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addComponent(jLabelTitulo, javax.swing.GroupLayout.Alignment.TRAILING, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
             .addGroup(jPanelPrincipalLayout.createSequentialGroup()
                 .addContainerGap()
                 .addComponent(jScrollPane3, javax.swing.GroupLayout.PREFERRED_SIZE, 224, javax.swing.GroupLayout.PREFERRED_SIZE)
                 .addGap(18, 18, 18)
                 .addGroup(jPanelPrincipalLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                    .addComponent(jScrollPane2, javax.swing.GroupLayout.PREFERRED_SIZE, 0, Short.MAX_VALUE)
                     .addGroup(jPanelPrincipalLayout.createSequentialGroup()
-                        .addComponent(txtPalavra)
+                        .addComponent(jLabelNome1)
+                        .addGap(0, 0, Short.MAX_VALUE))
+                    .addGroup(jPanelPrincipalLayout.createSequentialGroup()
+                        .addComponent(txtPalavra, javax.swing.GroupLayout.PREFERRED_SIZE, 126, javax.swing.GroupLayout.PREFERRED_SIZE)
                         .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                         .addComponent(jButtonAdd, javax.swing.GroupLayout.PREFERRED_SIZE, 41, javax.swing.GroupLayout.PREFERRED_SIZE)
-                        .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                        .addComponent(jButtonRmv, javax.swing.GroupLayout.PREFERRED_SIZE, 43, javax.swing.GroupLayout.PREFERRED_SIZE))
-                    .addGroup(jPanelPrincipalLayout.createSequentialGroup()
-                        .addComponent(jLabelNome1, javax.swing.GroupLayout.PREFERRED_SIZE, 184, javax.swing.GroupLayout.PREFERRED_SIZE)
-                        .addGap(0, 35, Short.MAX_VALUE))
-                    .addComponent(jScrollPane2, javax.swing.GroupLayout.PREFERRED_SIZE, 0, Short.MAX_VALUE))
+                        .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                        .addComponent(jButtonRmv, javax.swing.GroupLayout.PREFERRED_SIZE, 43, javax.swing.GroupLayout.PREFERRED_SIZE)))
                 .addContainerGap())
+            .addComponent(jLabelTitulo, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
         );
         jPanelPrincipalLayout.setVerticalGroup(
             jPanelPrincipalLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
@@ -292,7 +345,7 @@ public class ChatEspiao extends javax.swing.JFrame {
                             .addComponent(txtPalavra, javax.swing.GroupLayout.PREFERRED_SIZE, 23, javax.swing.GroupLayout.PREFERRED_SIZE)
                             .addComponent(jButtonAdd, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
                             .addComponent(jButtonRmv, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))))
-                .addContainerGap(40, Short.MAX_VALUE))
+                .addContainerGap(46, Short.MAX_VALUE))
         );
 
         javax.swing.GroupLayout layout = new javax.swing.GroupLayout(getContentPane());
@@ -309,19 +362,9 @@ public class ChatEspiao extends javax.swing.JFrame {
         pack();
     }// </editor-fold>//GEN-END:initComponents
 
-    private void jListPalavrasValueChanged(javax.swing.event.ListSelectionEvent evt) {//GEN-FIRST:event_jListPalavrasValueChanged
-        String select = this.jListPalavras.getSelectedValue();
-
-        if(select != null && !select.isEmpty()){
-            this.jButtonAdd.setEnabled(false);
-            this.jButtonRmv.setEnabled(true);
-        }
-    }//GEN-LAST:event_jListPalavrasValueChanged
-
-    private void jButtonAddActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButtonAddActionPerformed
-        // TODO add your handling code here:
-        addPalavra();
-    }//GEN-LAST:event_jButtonAddActionPerformed
+    private void jButtonRmvActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButtonRmvActionPerformed
+        rmvPalavra();
+    }//GEN-LAST:event_jButtonRmvActionPerformed
 
     private void txtPalavraKeyPressed(java.awt.event.KeyEvent evt) {//GEN-FIRST:event_txtPalavraKeyPressed
         // TODO add your handling code here:
@@ -330,9 +373,10 @@ public class ChatEspiao extends javax.swing.JFrame {
         }
     }//GEN-LAST:event_txtPalavraKeyPressed
 
-    private void jButtonRmvActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButtonRmvActionPerformed
-        rmvPalavra();
-    }//GEN-LAST:event_jButtonRmvActionPerformed
+    private void txtPalavraFocusLost(java.awt.event.FocusEvent evt) {//GEN-FIRST:event_txtPalavraFocusLost
+        // TODO add your handling code here:
+
+    }//GEN-LAST:event_txtPalavraFocusLost
 
     private void txtPalavraFocusGained(java.awt.event.FocusEvent evt) {//GEN-FIRST:event_txtPalavraFocusGained
         // TODO add your handling code here:
@@ -341,10 +385,19 @@ public class ChatEspiao extends javax.swing.JFrame {
         this.jButtonRmv.setEnabled(false);
     }//GEN-LAST:event_txtPalavraFocusGained
 
-    private void txtPalavraFocusLost(java.awt.event.FocusEvent evt) {//GEN-FIRST:event_txtPalavraFocusLost
+    private void jButtonAddActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButtonAddActionPerformed
         // TODO add your handling code here:
-        
-    }//GEN-LAST:event_txtPalavraFocusLost
+        addPalavra();
+    }//GEN-LAST:event_jButtonAddActionPerformed
+
+    private void jListPalavrasValueChanged(javax.swing.event.ListSelectionEvent evt) {//GEN-FIRST:event_jListPalavrasValueChanged
+        String select = this.jListPalavras.getSelectedValue();
+
+        if(select != null && !select.isEmpty()){
+            this.jButtonAdd.setEnabled(false);
+            this.jButtonRmv.setEnabled(true);
+        }
+    }//GEN-LAST:event_jListPalavrasValueChanged
 
     /**
      * @param args the command line arguments

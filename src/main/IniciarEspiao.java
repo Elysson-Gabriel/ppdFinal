@@ -4,18 +4,25 @@
  */
 package main;
 
-import util.Lookup;
-import java.rmi.RemoteException;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.net.ServerSocket;
+import java.net.Socket;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import javax.jms.Connection;
+import javax.jms.ConnectionFactory;
+import javax.jms.Destination;
+import javax.jms.JMSException;
+import javax.jms.MessageProducer;
+import javax.jms.Message;
+import javax.jms.Session;
+import javax.jms.TextMessage;
 import javax.swing.JOptionPane;
-import tuplas.Espiao;
-import tuplas.Usuario;
-import net.jini.core.entry.UnusableEntryException;
-import net.jini.core.lease.Lease;
-import net.jini.core.transaction.TransactionException;
-import net.jini.space.JavaSpace;
-import pages.ChatUsuario;
+import org.apache.activemq.ActiveMQConnection;
+import org.apache.activemq.ActiveMQConnectionFactory;
+import pages.ChatEspiao;
 
 /**
  *
@@ -23,9 +30,14 @@ import pages.ChatUsuario;
  */
 public class IniciarEspiao extends javax.swing.JFrame {
     
-    private JavaSpace space;
-    private Usuario usuario;
-    private Espiao espiao;
+    private ServerSocket serverSocket;
+    private boolean espiaoEntrou;
+    private String msg;
+    private Publisher publisher = null;
+    
+    private static final String url = ActiveMQConnection.DEFAULT_BROKER_URL;
+    private ConnectionFactory connectionFactory = null;
+    private ActiveMQConnection connection = null;
     
     /**
      * Creates new form UsuarioCadastro
@@ -34,86 +46,154 @@ public class IniciarEspiao extends javax.swing.JFrame {
     public IniciarEspiao() throws ClassNotFoundException {
         initComponents();
         
-        System.out.println("Procurando pelo servico JavaSpace...");
-        Lookup finder = new Lookup(JavaSpace.class);
-        this.space = (JavaSpace) finder.getService();
-        if (this.space == null) {
-                System.out.println("O servico JavaSpace nao foi encontrado. Encerrando...");
-                System.exit(-1);
-        } 
-        System.out.println("O servico JavaSpace foi encontrado.");
-        System.out.println(this.space);
-        
-        procurarEspiao();
+        System.out.println("----- Server Socket -----");
+        espiaoEntrou = false;
         
     }
     
-    public boolean criarUsuario(){
-        String nome = jTextFieldNome.getText();
-        boolean retorno = false;
-        
-        if(nome.isEmpty() || nome.contains(" ")){
-            JOptionPane.showMessageDialog(this, "Informe um nome de usuário válido", 
-                    "Tente novamente!", JOptionPane.ERROR_MESSAGE);
-            return false;
+    public void permiteConexoes() throws ClassNotFoundException{
+        try{
+            System.out.println("Aguardando espião...");
             
-        }else if(existeUsuario(nome)){
-            JOptionPane.showMessageDialog(this, "Nome de usuário já está sendo utilizado", 
-                    "Tente novamente!", JOptionPane.ERROR_MESSAGE);
-            return false;
+            while(!espiaoEntrou){
+                
+                new ChatEspiao().setVisible(true);
+                
+                //Aguarda espião se conectar ao server
+                Socket socketEspiao = serverSocket.accept();
+                this.dispose();
+                System.out.println("Espião se conectou!");
+                espiaoEntrou = true;
+                
+                //Define thread espião que ficará executando
+                ConexaoServidor espiao = new ConexaoServidor(socketEspiao);
+
+                Thread threadEspiao = new Thread(espiao);
+                threadEspiao.start();
+
+                //Armazena nos atributos locais onde está cada conexão
+                //espiaoCon = espiao;
+            }
+
+            //Não aceita mais conexões
+            System.out.println("O espião já se conectou.");
             
-        }else{
-            
-            this.usuario = new Usuario();
-            this.usuario.nome = nome;
+        } catch (IOException ex) {
+            System.out.println("Erro em permiteConexoes()");
+        }
+    }
+    
+    private class ConexaoServidor implements Runnable {
+    
+        private Socket socket;
+        private DataInputStream entrada;
+        private DataOutputStream saida;
+
+        public ConexaoServidor(Socket socket){
+            this.socket = socket;
 
             try {
-                this.space.write(usuario, null, Lease.FOREVER);
-                retorno = true;
-            } catch (TransactionException | RemoteException ex) {
-                Logger.getLogger(IniciarEspiao.class.getName()).log(Level.SEVERE, null, ex);
+                entrada = new DataInputStream(socket.getInputStream());
+                saida = new DataOutputStream(socket.getOutputStream());
+            } catch (IOException ex) {
+                System.out.println("Erro no run do socket");
             }
         }
-        
-        return retorno;
-    }
-    
-    public boolean existeUsuario(String nomeUsuario){
-        boolean existeUsuario = true;
-        Usuario uTemplate = new Usuario();
-        uTemplate.nome = nomeUsuario;
-        Usuario u = null;
-        
-        try {
-            u = (Usuario) space.read(uTemplate, null, 500);
-        } catch (UnusableEntryException | TransactionException | InterruptedException | RemoteException ex) {
-            Logger.getLogger(IniciarEspiao.class.getName()).log(Level.SEVERE, null, ex);
-        }
-        
-        if (u == null) {
-            existeUsuario = false;
-        }
-        return existeUsuario;
-    }
-    
-    public void procurarEspiao(){
-        Espiao template = new Espiao();
-        Espiao esp = null;
-        
-        try {
-            esp = (Espiao) space.read(template, null, 500);
 
-            if (esp == null) {
-                JOptionPane.showMessageDialog(this, "O espião não está na sala, aguarde-o.", 
-                    "Tente novamente!", JOptionPane.ERROR_MESSAGE);
+        public void run(){
+            try{
+                //Execução da thread
+                while(true){
+                    msg = entrada.readUTF();
+                    //System.out.println(msg);
+                    enviaMsgTopico(msg);
+                }
+
+            } catch (IOException ex) {
+                System.out.println("Erro no run do jogador");
                 System.exit(0);
             }
-        } catch (UnusableEntryException | TransactionException | InterruptedException | RemoteException ex) {
-            Logger.getLogger(IniciarEspiao.class.getName()).log(Level.SEVERE, null, ex);
         }
         
-        this.espiao = esp;
-        
+        public void fechaConexao(){
+           try{
+                socket.close();
+                System.out.println("-----CONEXÃO ENCERRADA-----");
+            } catch (IOException ex) {
+                System.out.println("Erro no fechaConexao() do Servidor");
+            } 
+        }
+    
+    }
+    
+    private class Publisher {
+        /*
+         * URL do servidor JMS. DEFAULT_BROKER_URL indica que o servidor está em localhost
+        */	
+
+        //private static final String url = ActiveMQConnection.DEFAULT_BROKER_URL;
+
+        private Session session;
+        private MessageProducer publisher;
+        private Connection connection;
+
+        public Publisher(String topicName) throws Exception{
+            /*
+             * Estabelecendo conexão com o Servidor JMS
+            */		
+            ConnectionFactory connectionFactory = new ActiveMQConnectionFactory("failover://tcp://" + 
+                    jTextFieldBroker.getText() + ":61616");
+            Connection connection = connectionFactory.createConnection();
+            connection.start();
+
+            /*
+             * Criando Session 
+             */		
+            Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
+            
+            /*
+             * Criando Topic
+            */     
+            Destination dest = session.createTopic(topicName);
+            
+            /*
+            * Criando Produtor
+            */
+            MessageProducer publisher = session.createProducer(dest);
+
+            this.connection = connection;
+            this.session = session;
+            this.publisher = publisher;
+
+            connection.start();
+        }
+
+        public void enviaMensagem(String s)throws JMSException{
+            TextMessage msg = session.createTextMessage();
+ 
+            msg.setText(s);
+
+            /*
+             * Publicando Mensagem
+             */
+            publisher.send(msg);
+        }
+
+        public void close() throws JMSException{
+            publisher.close();
+            session.close();
+            connection.close();
+        }
+    
+    }
+    
+    public void enviaMsgTopico(String msg){
+   
+        try {
+            this.publisher.enviaMensagem(msg);
+        } catch (JMSException ex) {
+            Logger.getLogger(IniciarEspiao.class.getName()).log(Level.SEVERE, null, ex);
+        }
     }
 
     /**
@@ -127,10 +207,12 @@ public class IniciarEspiao extends javax.swing.JFrame {
 
         jPanelPrincipal = new javax.swing.JPanel();
         jLabelTitulo = new javax.swing.JLabel();
-        jLabelNome = new javax.swing.JLabel();
-        jTextFieldNome = new javax.swing.JTextField();
         jButtonCriar = new javax.swing.JButton();
+        jLabelNome1 = new javax.swing.JLabel();
+        jTextFieldBroker = new javax.swing.JTextField();
+        jLabelNome2 = new javax.swing.JLabel();
         jLabel1 = new javax.swing.JLabel();
+        jSpinnerPorta = new javax.swing.JSpinner();
 
         setDefaultCloseOperation(javax.swing.WindowConstants.EXIT_ON_CLOSE);
         setResizable(false);
@@ -139,29 +221,40 @@ public class IniciarEspiao extends javax.swing.JFrame {
 
         jLabelTitulo.setFont(new java.awt.Font("Arial", 1, 14)); // NOI18N
         jLabelTitulo.setHorizontalAlignment(javax.swing.SwingConstants.CENTER);
-        jLabelTitulo.setText("Iniciar Espião");
+        jLabelTitulo.setText("Configurações Espião");
 
-        jLabelNome.setText("Nome:");
-
-        jTextFieldNome.addFocusListener(new java.awt.event.FocusAdapter() {
-            public void focusGained(java.awt.event.FocusEvent evt) {
-                jTextFieldNomeFocusGained(evt);
-            }
-        });
-        jTextFieldNome.addKeyListener(new java.awt.event.KeyAdapter() {
-            public void keyReleased(java.awt.event.KeyEvent evt) {
-                jTextFieldNomeKeyReleased(evt);
-            }
-        });
-
-        jButtonCriar.setText("Entrar");
+        jButtonCriar.setText("Iniciar");
         jButtonCriar.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
                 jButtonCriarActionPerformed(evt);
             }
         });
 
+        jLabelNome1.setHorizontalAlignment(javax.swing.SwingConstants.TRAILING);
+        jLabelNome1.setText("IP Broker (Active MQ):");
+
+        jTextFieldBroker.setText("127.0.0.1");
+        jTextFieldBroker.addFocusListener(new java.awt.event.FocusAdapter() {
+            public void focusGained(java.awt.event.FocusEvent evt) {
+                jTextFieldBrokerFocusGained(evt);
+            }
+        });
+        jTextFieldBroker.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jTextFieldBrokerActionPerformed(evt);
+            }
+        });
+        jTextFieldBroker.addKeyListener(new java.awt.event.KeyAdapter() {
+            public void keyReleased(java.awt.event.KeyEvent evt) {
+                jTextFieldBrokerKeyReleased(evt);
+            }
+        });
+
+        jLabelNome2.setText("Porta Server Socket:");
+
         jLabel1.setIcon(new javax.swing.ImageIcon(getClass().getResource("/resources/espiao.png"))); // NOI18N
+
+        jSpinnerPorta.setModel(new javax.swing.SpinnerNumberModel(51734, 0, 65536, 1));
 
         javax.swing.GroupLayout jPanelPrincipalLayout = new javax.swing.GroupLayout(jPanelPrincipal);
         jPanelPrincipal.setLayout(jPanelPrincipalLayout);
@@ -170,42 +263,54 @@ public class IniciarEspiao extends javax.swing.JFrame {
             .addGroup(jPanelPrincipalLayout.createSequentialGroup()
                 .addGroup(jPanelPrincipalLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
                     .addGroup(jPanelPrincipalLayout.createSequentialGroup()
-                        .addGap(23, 23, 23)
+                        .addContainerGap()
+                        .addGroup(jPanelPrincipalLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.TRAILING)
+                            .addComponent(jLabelNome1)
+                            .addComponent(jLabelNome2))
+                        .addGap(18, 18, 18)
                         .addGroup(jPanelPrincipalLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-                            .addGroup(jPanelPrincipalLayout.createSequentialGroup()
-                                .addComponent(jLabelNome)
-                                .addGap(18, 18, 18)
-                                .addComponent(jTextFieldNome, javax.swing.GroupLayout.PREFERRED_SIZE, 258, javax.swing.GroupLayout.PREFERRED_SIZE))
-                            .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, jPanelPrincipalLayout.createSequentialGroup()
-                                .addComponent(jLabelTitulo, javax.swing.GroupLayout.PREFERRED_SIZE, 227, javax.swing.GroupLayout.PREFERRED_SIZE)
-                                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                                .addComponent(jLabel1))))
+                            .addComponent(jTextFieldBroker, javax.swing.GroupLayout.PREFERRED_SIZE, 78, javax.swing.GroupLayout.PREFERRED_SIZE)
+                            .addComponent(jSpinnerPorta, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
+                        .addGap(56, 56, 56))
                     .addGroup(jPanelPrincipalLayout.createSequentialGroup()
-                        .addGap(141, 141, 141)
-                        .addComponent(jButtonCriar)))
-                .addContainerGap(25, Short.MAX_VALUE))
+                        .addComponent(jLabelTitulo, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                        .addGap(18, 18, 18)))
+                .addComponent(jLabel1)
+                .addContainerGap())
+            .addGroup(jPanelPrincipalLayout.createSequentialGroup()
+                .addGap(95, 95, 95)
+                .addComponent(jButtonCriar)
+                .addContainerGap(javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))
         );
         jPanelPrincipalLayout.setVerticalGroup(
             jPanelPrincipalLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
             .addGroup(jPanelPrincipalLayout.createSequentialGroup()
                 .addContainerGap()
                 .addGroup(jPanelPrincipalLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-                    .addComponent(jLabelTitulo, javax.swing.GroupLayout.PREFERRED_SIZE, 25, javax.swing.GroupLayout.PREFERRED_SIZE)
+                    .addGroup(jPanelPrincipalLayout.createSequentialGroup()
+                        .addGap(7, 7, 7)
+                        .addComponent(jLabelTitulo, javax.swing.GroupLayout.PREFERRED_SIZE, 25, javax.swing.GroupLayout.PREFERRED_SIZE))
                     .addComponent(jLabel1))
-                .addGap(8, 8, 8)
+                .addGap(11, 11, 11)
                 .addGroup(jPanelPrincipalLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
-                    .addComponent(jLabelNome)
-                    .addComponent(jTextFieldNome, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
-                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED, 34, Short.MAX_VALUE)
+                    .addComponent(jLabelNome2)
+                    .addComponent(jSpinnerPorta, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
+                .addGap(18, 18, 18)
+                .addGroup(jPanelPrincipalLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
+                    .addComponent(jLabelNome1)
+                    .addComponent(jTextFieldBroker, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
+                .addGap(18, 18, 18)
                 .addComponent(jButtonCriar)
-                .addGap(30, 30, 30))
+                .addContainerGap(25, Short.MAX_VALUE))
         );
 
         javax.swing.GroupLayout layout = new javax.swing.GroupLayout(getContentPane());
         getContentPane().setLayout(layout);
         layout.setHorizontalGroup(
             layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addComponent(jPanelPrincipal, javax.swing.GroupLayout.Alignment.TRAILING, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+            .addGroup(layout.createSequentialGroup()
+                .addComponent(jPanelPrincipal, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addGap(0, 0, Short.MAX_VALUE))
         );
         layout.setVerticalGroup(
             layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
@@ -215,21 +320,34 @@ public class IniciarEspiao extends javax.swing.JFrame {
         pack();
     }// </editor-fold>//GEN-END:initComponents
 
-    private void jTextFieldNomeFocusGained(java.awt.event.FocusEvent evt) {//GEN-FIRST:event_jTextFieldNomeFocusGained
-
-    }//GEN-LAST:event_jTextFieldNomeFocusGained
-
-    private void jTextFieldNomeKeyReleased(java.awt.event.KeyEvent evt) {//GEN-FIRST:event_jTextFieldNomeKeyReleased
-
-    }//GEN-LAST:event_jTextFieldNomeKeyReleased
-
     private void jButtonCriarActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButtonCriarActionPerformed
-        // TODO add your handling code here:
-        if(criarUsuario()){
-            new ChatUsuario(this.usuario, this.space, this.espiao).setVisible(true);
-            this.dispose();
+        int porta = (int) jSpinnerPorta.getValue();
+        
+        try {
+            serverSocket = new ServerSocket(porta);
+            this.permiteConexoes();
+            publisher = new Publisher("MOM");
+        } catch (IOException ex) {
+            System.out.println("Erro no construtor do servidor");
+        } catch (ClassNotFoundException ex) {
+            Logger.getLogger(IniciarEspiao.class.getName()).log(Level.SEVERE, null, ex);
+        } catch (Exception ex) {
+            Logger.getLogger(IniciarEspiao.class.getName()).log(Level.SEVERE, null, ex);
         }
+        
     }//GEN-LAST:event_jButtonCriarActionPerformed
+
+    private void jTextFieldBrokerFocusGained(java.awt.event.FocusEvent evt) {//GEN-FIRST:event_jTextFieldBrokerFocusGained
+        // TODO add your handling code here:
+    }//GEN-LAST:event_jTextFieldBrokerFocusGained
+
+    private void jTextFieldBrokerKeyReleased(java.awt.event.KeyEvent evt) {//GEN-FIRST:event_jTextFieldBrokerKeyReleased
+        // TODO add your handling code here:
+    }//GEN-LAST:event_jTextFieldBrokerKeyReleased
+
+    private void jTextFieldBrokerActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jTextFieldBrokerActionPerformed
+        // TODO add your handling code here:
+    }//GEN-LAST:event_jTextFieldBrokerActionPerformed
 
     /**
      * @param args the command line arguments
@@ -288,6 +406,230 @@ public class IniciarEspiao extends javax.swing.JFrame {
         //</editor-fold>
         //</editor-fold>
         //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
+        //</editor-fold>
 
         /* Create and display the form */
         java.awt.EventQueue.invokeLater(new Runnable() {
@@ -304,9 +646,11 @@ public class IniciarEspiao extends javax.swing.JFrame {
     // Variables declaration - do not modify//GEN-BEGIN:variables
     private javax.swing.JButton jButtonCriar;
     private javax.swing.JLabel jLabel1;
-    private javax.swing.JLabel jLabelNome;
+    private javax.swing.JLabel jLabelNome1;
+    private javax.swing.JLabel jLabelNome2;
     private javax.swing.JLabel jLabelTitulo;
     private javax.swing.JPanel jPanelPrincipal;
-    private javax.swing.JTextField jTextFieldNome;
+    private javax.swing.JSpinner jSpinnerPorta;
+    private javax.swing.JTextField jTextFieldBroker;
     // End of variables declaration//GEN-END:variables
 }
