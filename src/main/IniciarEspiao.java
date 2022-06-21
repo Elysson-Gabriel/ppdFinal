@@ -16,11 +16,9 @@ import javax.jms.ConnectionFactory;
 import javax.jms.Destination;
 import javax.jms.JMSException;
 import javax.jms.MessageProducer;
-import javax.jms.Message;
 import javax.jms.Session;
 import javax.jms.TextMessage;
 import javax.swing.JOptionPane;
-import org.apache.activemq.ActiveMQConnection;
 import org.apache.activemq.ActiveMQConnectionFactory;
 import pages.ChatEspiao;
 
@@ -35,10 +33,6 @@ public class IniciarEspiao extends javax.swing.JFrame {
     private String msg;
     private Publisher publisher = null;
     
-    private static final String url = ActiveMQConnection.DEFAULT_BROKER_URL;
-    private ConnectionFactory connectionFactory = null;
-    private ActiveMQConnection connection = null;
-    
     /**
      * Creates new form UsuarioCadastro
      * @throws java.lang.ClassNotFoundException
@@ -51,13 +45,13 @@ public class IniciarEspiao extends javax.swing.JFrame {
         
     }
     
-    public void permiteConexoes() throws ClassNotFoundException{
+    public void permiteConexoes(int porta) throws ClassNotFoundException{
         try{
             System.out.println("Aguardando espião...");
             
             while(!espiaoEntrou){
                 
-                new ChatEspiao().setVisible(true);
+                new ChatEspiao(porta).setVisible(true);
                 
                 //Aguarda espião se conectar ao server
                 Socket socketEspiao = serverSocket.accept();
@@ -137,12 +131,12 @@ public class IniciarEspiao extends javax.swing.JFrame {
         private MessageProducer publisher;
         private Connection connection;
 
-        public Publisher(String topicName) throws Exception{
+        public Publisher(String topicName, String ip) throws Exception{
             /*
              * Estabelecendo conexão com o Servidor JMS
             */		
             ConnectionFactory connectionFactory = new ActiveMQConnectionFactory("failover://tcp://" + 
-                    jTextFieldBroker.getText() + ":61616");
+                    ip + ":61616");
             Connection connection = connectionFactory.createConnection();
             connection.start();
 
@@ -221,7 +215,7 @@ public class IniciarEspiao extends javax.swing.JFrame {
 
         jLabelTitulo.setFont(new java.awt.Font("Arial", 1, 14)); // NOI18N
         jLabelTitulo.setHorizontalAlignment(javax.swing.SwingConstants.CENTER);
-        jLabelTitulo.setText("Configurações Espião");
+        jLabelTitulo.setText("Configurações para o Espião");
 
         jButtonCriar.setText("Iniciar");
         jButtonCriar.addActionListener(new java.awt.event.ActionListener() {
@@ -322,19 +316,27 @@ public class IniciarEspiao extends javax.swing.JFrame {
 
     private void jButtonCriarActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButtonCriarActionPerformed
         int porta = (int) jSpinnerPorta.getValue();
+        String ip = jTextFieldBroker.getText();
         
-        try {
-            serverSocket = new ServerSocket(porta);
-            this.permiteConexoes();
-            publisher = new Publisher("MOM");
-        } catch (IOException ex) {
-            System.out.println("Erro no construtor do servidor");
-        } catch (ClassNotFoundException ex) {
-            Logger.getLogger(IniciarEspiao.class.getName()).log(Level.SEVERE, null, ex);
-        } catch (Exception ex) {
-            Logger.getLogger(IniciarEspiao.class.getName()).log(Level.SEVERE, null, ex);
+        if(ip != null && !ip.isEmpty()){
+            
+            try {
+                serverSocket = new ServerSocket(porta);
+                publisher = new Publisher("MOM-ppdFinal", ip);
+                this.permiteConexoes(porta);
+            } catch (IOException ex) {
+                System.out.println("Erro no construtor do servidor");
+            } catch (ClassNotFoundException ex) {
+                Logger.getLogger(IniciarEspiao.class.getName()).log(Level.SEVERE, null, ex);
+            } catch (Exception ex) {
+                Logger.getLogger(IniciarEspiao.class.getName()).log(Level.SEVERE, null, ex);
+            }
+            
+        }else{
+            JOptionPane.showMessageDialog(this, "Preencha o IP do Broker", 
+                    "Tente novamente!", JOptionPane.ERROR_MESSAGE);
         }
-        
+ 
     }//GEN-LAST:event_jButtonCriarActionPerformed
 
     private void jTextFieldBrokerFocusGained(java.awt.event.FocusEvent evt) {//GEN-FIRST:event_jTextFieldBrokerFocusGained

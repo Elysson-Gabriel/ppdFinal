@@ -112,7 +112,7 @@
               <Font name="Arial" size="14" style="1"/>
             </Property>
             <Property name="horizontalAlignment" type="int" value="0"/>
-            <Property name="text" type="java.lang.String" value="Configura&#xe7;&#xf5;es Espi&#xe3;o"/>
+            <Property name="text" type="java.lang.String" value="Configura&#xe7;&#xf5;es para o Espi&#xe3;o"/>
           </Properties>
         </Component>
         <Component class="javax.swing.JButton" name="jButtonCriar">

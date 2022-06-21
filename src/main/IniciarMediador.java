@@ -12,11 +12,9 @@ import javax.jms.Destination;
 import javax.jms.Message;
 import javax.jms.MessageConsumer;
 import javax.jms.MessageListener;
-import javax.jms.ObjectMessage;
 import javax.jms.Session;
 import javax.jms.TextMessage;
-import javax.swing.DefaultListModel;
-import org.apache.activemq.ActiveMQConnection;
+import javax.swing.JOptionPane;
 import org.apache.activemq.ActiveMQConnectionFactory;
 
 /**
@@ -44,12 +42,12 @@ public class IniciarMediador extends javax.swing.JFrame {
         private MessageConsumer subscriber;
         private Connection connection;
 
-        public Subscriber(String topicName) throws Exception{
+        public Subscriber(String topicName, String ip) throws Exception{
             /*
              * Estabelecendo conexão com o Servidor JMS
             */		
             ConnectionFactory connectionFactory = new ActiveMQConnectionFactory("failover://tcp://" 
-                    + jTextFieldBroker.getText() + ":61616");
+                    + ip + ":61616");
             Connection connection = connectionFactory.createConnection();
             connection.start();
 
@@ -232,10 +230,17 @@ public class IniciarMediador extends javax.swing.JFrame {
     }//GEN-LAST:event_jTextFieldBrokerKeyReleased
 
     private void jButtonIniciarActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButtonIniciarActionPerformed
-        try {
-            new Subscriber("MOM").Go();
-        } catch (Exception ex) {
-            Logger.getLogger(IniciarMediador.class.getName()).log(Level.SEVERE, null, ex);
+        String ip = jTextFieldBroker.getText();
+        
+        if(ip != null && !ip.isEmpty()){
+            try {
+                new Subscriber("MOM-ppdFinal", ip).Go();
+            } catch (Exception ex) {
+                Logger.getLogger(IniciarMediador.class.getName()).log(Level.SEVERE, null, ex);
+            }
+        }else{
+            JOptionPane.showMessageDialog(this, "Preencha o IP do Broker", 
+                    "Tente novamente!", JOptionPane.ERROR_MESSAGE);
         }
     }//GEN-LAST:event_jButtonIniciarActionPerformed
 

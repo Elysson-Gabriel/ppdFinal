@@ -32,14 +32,19 @@ public class ChatEspiao extends javax.swing.JFrame {
     private int msgAtualPub;
     private DefaultListModel palavras = null;
     private ConexaoEspiao clienteEspiao;
+    private int porta;
     
     /**
      * Creates new form ChatEspiao
-     * @throws java.lang.ClassNotFoundException
      */
-    public ChatEspiao() throws ClassNotFoundException {
+    public ChatEspiao(){
+
+    }
+    
+    public ChatEspiao(int porta) throws ClassNotFoundException {
         initComponents();
         
+        this.porta = porta;
         System.out.println("Procurando pelo servico JavaSpace...");
         Lookup finder = new Lookup(JavaSpace.class);
         this.space = (JavaSpace) finder.getService();
@@ -99,8 +104,8 @@ public class ChatEspiao extends javax.swing.JFrame {
             System.out.println("----- Espião -----");
 
             try{
-                //Se conecta via socket ao jogo do servidor
-                socket = new Socket("localhost", 51734);
+                //Se conecta via socket ao servidor
+                socket = new Socket("localhost", porta);
                 entrada = new DataInputStream(socket.getInputStream());
                 saida = new DataOutputStream(socket.getOutputStream());
                 System.out.println("Espião conectado ao servidor.");
@@ -444,11 +449,7 @@ public class ChatEspiao extends javax.swing.JFrame {
         /* Create and display the form */
         java.awt.EventQueue.invokeLater(new Runnable() {
             public void run() {
-                try {
-                    new ChatEspiao().setVisible(true);
-                } catch (ClassNotFoundException ex) {
-                    Logger.getLogger(ChatEspiao.class.getName()).log(Level.SEVERE, null, ex);
-                }
+                new ChatEspiao().setVisible(true);
             }
         });
     }
